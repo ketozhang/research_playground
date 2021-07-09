@@ -5,6 +5,12 @@ import pandas as pd
 
 DATA_PATH = Path(__file__).resolve().parent
 
+# Any data outside these conditions are set to NaN
+CUTOFFS = [
+    "host_mass > 0 and host_mass < 20",
+    "redshift > 0",
+]
+
 
 def get_zpeg(zpeg_num):
     dirpath = DATA_PATH / "zpeg"
@@ -21,6 +27,10 @@ def get_zpeg(zpeg_num):
         }
     )
 
-    df["host_mass"] = np.log10(df["host_mass"])
+    # Clean host mass:
+    df.loc[
+        df["host_mass"] <= 0, "host_mass"
+    ] = np.nan  # Assume non-positive values are NaNs when ZPEG fails to fit
+    df["host_mass"] = np.log10(df["host_mass"])  # Set unit to log10 solar mass
 
     return df
