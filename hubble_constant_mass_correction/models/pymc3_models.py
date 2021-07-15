@@ -10,8 +10,16 @@ from .distmod_tripp import get_mu_tripp
 
 
 class Model(pm.Model):
-    def __init__(self, sne_data, hubble_constant, omega_m, host_mass_correction_model):
-        """
+    def __init__(self, sne_data, hubble_constant, host_mass_correction_model):
+        r"""SNe standardization model with mass step correction
+
+        \mu = m_B - (M_B + \alpha \cdot x + \beta \cdot c + \delta m_*) + \epsilon
+
+        More useful for MCMC is to rewrite this in the form of "true = model + error". Note the sign for the error
+        term doesn't matter.
+
+        m_B = [\mu + M_B + \alpha \cdot x + \beta \cdot c + \delta m_*] + \epsilon
+
         Parameters
         ----------
         sne_data : np.recarray or pd.DataFrame
@@ -32,7 +40,6 @@ class Model(pm.Model):
                     * array-like of size >2, the observed host mass is distributed as the given posterior samples
 
         hubble_constant : float
-        omega_m : float
         host_mass_correction_model : str
             The host mass correction model to use None, "step", or "sigmoid"
         """
@@ -49,84 +56,88 @@ class Model(pm.Model):
 
         self.sne_size = self.sne_data.shape[0]
         self.hubble_constant = hubble_constant
-        self.omega_m = omega_m
         self.host_mass_correction_model = host_mass_correction_model
 
-        self._set_priors()
-        self._set_model()
-        self._set_likelihood()
+        self.pooled_vars = []
+        self.unpooled_vars = []
 
-    ##################
-    # PRIVATE METHODS
-    ##################
-    def _set_priors(self):
-        # Likelihood rv prior
-        self.hr_sigma = pm.HalfNormal(
-            name=r"$\sigma_{HR}$", sigma=10, shape=self.sne_size
+        self.prior()
+        self.likelihood()
+
+    def prior(self):
+        # Scatter prior
+        self.sigma_mag = pm.HalfNormal(
+            name=r"$\sigma_{m_B}$", sigma=10, shape=self.sne_size
         )
 
-        ###################################
-        # Define the tripp parameter prior
-        ###################################
+        # Cosmology
+        self.omega_m = pm.Uniform(name=r"$\Omega_m$")
+
+        #################################
+        # Define the tripp params' prior
+        #################################
         self.alpha = pm.Normal(r"$\alpha$", sigma=100, shape=self.sne_size)
         self.beta = pm.Normal(r"$\beta$", sigma=100, shape=self.sne_size)
-        self.abs_mag = pm.Normal("M", sigma=100, shape=1)
+        self.abs_mag = pm.Normal("$M_B$", sigma=100, shape=1)
 
-        ########################################
-        # Define the mass correction prior
-        ########################################
+        self.unpooled_vars += [self.alpha, self.beta]
+        self.pooled_vars.append(self.abs_mag)
+
+        ###########################################
+        # Define the mass correction params' prior
+        ###########################################
 
         # Fit a (hyper)prior to the host mass data
         host_mass = self._fit_host_mass(self.sne_data["host_mass"])
 
         # Define the hyperpriors depending on which host mass correction model
         if self.host_mass_correction_model == "step":
-            loc = pm.Normal(r"loc", sigma=100, shape=1)
-            size = pm.Normal(r"size", sigma=100, shape=1)
+            self.loc = pm.Normal(r"loc", sigma=100, shape=1)
+            self.size = pm.Normal(r"size", sigma=100, shape=1)
+
+            self.pooled_vars += [self.loc, self.size]
 
             mass_correction_f = mass_corrections.step
-            mass_correction_args = (host_mass, loc, size)
+            mass_correction_args = (host_mass, self.loc, self.size)
         elif self.host_mass_correction_model == "sigmoid":
-            loc = pm.Normal(r"loc", sigma=100, shape=1)
-            size = pm.Normal(r"size", sigma=10, shape=1)
-            slope = pm.Normal(r"slope", sigma=100, shape=1)
+            self.loc = pm.Normal(r"loc", sigma=100, shape=1)
+            self.size = pm.Normal(r"size", sigma=10, shape=1)
+            self.slope = pm.Normal(r"slope", sigma=100, shape=1)
+
+            self.pooled_vars += [self.loc, self.size, self.slope]
 
             mass_correction_f = mass_corrections.sigmoid
-            mass_correction_args = (host_mass, loc, size, slope)
+            mass_correction_args = (host_mass, self.loc, self.size, self.slope)
         else:
             raise ValueError()
 
         self.mass_correction = pm.Deterministic(
             r"$\Delta M$", mass_correction_f(*mass_correction_args)
         )
+        self.unpooled_vars += [self.mass_correction]
 
-    def _set_model(self):
-        self.distmod_cosmology = get_mu_th(
+    def likelihood(self):
+        distmod_cosmology = get_mu_th(
             self.hubble_constant, self.omega_m, self.sne_data["redshift"]
         )
 
-    def _set_likelihood(self):
-        """
-        HR ~ Normal
-        """
-        distmod_tripp = get_mu_tripp(
-            self.sne_data["mag"],
-            self.sne_data["stretch"],
-            self.sne_data["color"],
-            self.alpha,
-            self.beta,
-            self.abs_mag,
+        mag_true = (
+            distmod_cosmology
+            + self.abs_mag
+            + self.alpha * self.sne_data["stretch"]
+            + self.beta * self.sne_data["color"]
+            + self.mass_correction
         )
-        self.distmod_observed = distmod_tripp + self.mass_correction
-
-        self.distmod = pm.Normal(
-            name=r"$\mu$",
-            mu=self.distmod_observed,
-            sigma=self.hr_sigma,
-            observed=self.distmod_cosmology,
-            shape=self.sne_size,
+        self.mag_likelihood = pm.Normal(
+            name="$m_B$",
+            mu=mag_true,
+            sigma=self.sigma_mag,
+            observed=self.sne_data["mag"],
         )
 
+    ##################
+    # PRIVATE METHODS
+    ##################
     def _fit_host_mass(self, host_mass):
         # Return different types of pm.Model depending on the first element of `host_mass`.
         if np.isscalar(host_mass[0]):

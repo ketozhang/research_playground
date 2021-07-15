@@ -34,3 +34,21 @@ def get_zpeg(zpeg_num):
     df["host_mass"] = np.log10(df["host_mass"])  # Set unit to log10 solar mass
 
     return df
+
+
+def get_jla():
+    dirpath = DATA_PATH / "jla"
+    filename = "jla.csv"
+    df = pd.read_csv(dirpath / filename)
+
+    df = df.rename(
+        columns={
+            "zcmb": "redshift",
+            "mb": "mag",
+            "x1": "stretch",
+            "color": "color",
+            "3rdvar": "host_mass",
+        }
+    )
+
+    return df
