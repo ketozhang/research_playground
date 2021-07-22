@@ -16,6 +16,8 @@ arviz = "^0.11.2"
 jupyterlab = "^3.0.16"
 corner = "^2.2.1"
 emcee = "^3.1.0"
+ipywidgets = "^7.6.3"
+h5py = "^3.3.0"
 
 [tool.poetry.dev-dependencies]
 black = "^21.6b0"

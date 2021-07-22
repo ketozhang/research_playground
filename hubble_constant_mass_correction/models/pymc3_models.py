@@ -114,6 +114,7 @@ class Model(pm.Model):
         self.mass_correction = pm.Deterministic(
             r"$\Delta M$", mass_correction_f(*mass_correction_args)
         )
+
         self.unpooled_vars += [self.mass_correction]
 
     def likelihood(self):

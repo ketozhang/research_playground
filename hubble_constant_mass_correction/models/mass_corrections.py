@@ -1,9 +1,9 @@
-from pymc3 import math
+import numpy as np
 
 
 def sigmoid(host_mass, loc, size, slope):
-    return size / (1 + math.exp(-slope * (host_mass - loc)))
+    return size / (1 + np.exp(-slope * (host_mass - loc)))
 
 
 def step(host_mass, loc, size):
-    return math.where(math.lt(host_mass, loc), 0, size)
+    return np.where(host_mass < loc, 0, size)
