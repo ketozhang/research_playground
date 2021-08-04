@@ -16,41 +16,21 @@ from .distmod_tripp import get_mu_tripp
 class Model:
     def __init__(
         self,
-        sne_data,
         H0,
         host_mass_correction_model="step",
         param_rvs=None,
-        overwrite=False,
     ):
         r"""SNe standardization model with mass step correction
 
-        \mu = m_B - (M_B + \alpha \cdot x + \beta \cdot c + \delta m_*) + \epsilon
+        $$ \mu(z; \Omega_{m,0}) = m_B - (M_B + \alpha \cdot x + \beta \cdot c + \Delta m_*) + \epsilon $$
 
         More useful for MCMC is to rewrite this in the form of "true = model + error". Note the sign for the error
         term doesn't matter.
 
-        m_B = [\mu + M_B + \alpha \cdot x + \beta \cdot c + \delta m_*] + \epsilon
+        $$ m_B = [\mu(z; \Omega_{m,0}) + M_B + \alpha \cdot x + \beta \cdot c + \Delta m_*] + \epsilon $$
 
         Parameters
         ----------
-        sne_data : pd.DataFrame
-            SN params to calculate the observed distance modulus. The following keys/columns must exist
-
-                mag : array-like
-                    B-band apparent magnitude
-                redshift : array-like
-                stretch : array-like
-                    SALT2 x1 parameter
-                color : array-like
-                    SALT2 c parameter
-                host_mass : array-like
-                    An array of host stellar mass with each element per SN must be one of the following:
-                        * float, the observed host mass is deterministic without uncertainty
-                        * array-like of size 2 with columns being `"host_mass"` and `"host_mass_err"`,
-                            the observed host mass is normally distributed with mu and sigma taken from
-                            the keys respectively.
-                        * array-like of size >2, the observed host mass is distributed as the given posterior samples
-
         H0 : float
             Hubble constant
         host_mass_correction_model : str
@@ -58,15 +38,8 @@ class Model:
         param_rvs : dict
             With key being the parameter name and values being a random variable (`scipy.stats.rv_continuous`)
         """
-        # Handles design matrix
-        if isinstance(sne_data, pd.DataFrame):
-            self.y = sne_data["mag"]
-            self.X = sne_data.drop(columns=["mag"])
-        else:
-            raise ValueError("Arg `sne_data` must be `pd.DataFrame`.")
 
         self.H0 = H0
-        self.nrows = self.X.shape[0]
 
         # Handle parameters
         self.param_rvs = {
@@ -105,7 +78,48 @@ class Model:
     def param_names(self):
         return tuple(self.param_rvs.keys())
 
-    def get_sampler(self, nwalkers=None, savefile=None, **kwargs):
+    def fit(
+        self,
+        data=None,
+        nwalkers=8,
+        nsteps=1000,
+        initial_state=None,
+        progress=True,
+        savefile=None,
+        sampler_kwargs={},
+        run_mcmc_kwargs={},
+    ):
+        """Fit model to SNe dataset.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            SN params to calculate the observed distance modulus. The following keys/columns must exist
+
+                mag : array-like
+                    B-band apparent magnitude
+                redshift : array-like
+                stretch : array-like
+                    SALT2 x1 parameter
+                color : array-like
+                    SALT2 c parameter
+                host_mass : array-like
+                    An array of host stellar mass with each element per SN must be one of the following:
+                        * float, the observed host mass is deterministic without uncertainty
+                        * array-like of size 2 with columns being `"host_mass"` and `"host_mass_err"`,
+                            the observed host mass is normally distributed with mu and sigma taken from
+                            the keys respectively.
+                        * array-like of size >2, the observed host mass is distributed as the given posterior samples
+        """
+        # Handles design matrix, store x, y, and nrows instance attributes
+        if isinstance(data, pd.DataFrame):
+            self.y = data["mag"]
+            self.X = data.drop(columns=["mag"])
+        else:
+            raise ValueError("Arg `data` must be `pd.DataFrame`.")
+        self.nrows = self.X.shape[0]
+
+        # Start MCMC fitter
         if nwalkers is not None:
             self._nwalkers = nwalkers
 
@@ -116,40 +130,75 @@ class Model:
         else:
             storage_backend = None
 
-        sampler = emcee.EnsembleSampler(
+        self.sampler = emcee.EnsembleSampler(
             nwalkers=self._nwalkers,
             ndim=self.nparams,
             log_prob_fn=self.logprob,
             args=(self.y, self.X, self.H0),
             parameter_names=list(self.param_rvs.keys()),
             backend=storage_backend,
-            **kwargs
+            **sampler_kwargs
         )
-        return sampler
+
+        initial_state = (
+            initial_state
+            if (initial_state is not None)
+            else self.sample_priors(nwalkers)
+        )
+        self.sampler.run_mcmc(
+            nsteps=nsteps,
+            initial_state=initial_state,
+            progress=progress,
+            **run_mcmc_kwargs
+        )
+
+        return self.sampler
+
+    def predict(self, redshift, stretch, color, params, host_mass=None):
+        mass_correction = (
+            0 if host_mass is None else self.get_mass_correction(host_mass, params)
+        )
+
+        mu_th = get_mu_th(self.H0, params["Om0"], redshift)
+        m_pred = (
+            mu_th
+            + params["M_B"]
+            + (params["alpha"] * stretch)
+            + (params["beta"] * color)
+            + mass_correction
+        )
+        return m_pred
+
+    def predict_mu(self, m_obs, stretch, color, params, host_mass=None):
+        mass_correction = (
+            0 if host_mass is None else self.get_mass_correction(host_mass, params)
+        )
+
+        mu_pred = m_obs - (
+            params["M_B"]
+            + params["alpha"] * stretch
+            + params["beta"] * color
+            + mass_correction
+        )
+        return mu_pred
+
+    def get_mass_correction(self, host_mass, params):
+        if self.host_mass_correction_model == "step":
+            mass_correction = mass_corrections.step(
+                host_mass, params["loc"], params["size"]
+            )
+        elif self.host_mass_correction_model == "sigmoid":
+            mass_correction = mass_corrections.sigmoid(
+                host_mass, params["loc"], params["size"], params["slope"]
+            )
+        else:
+            raise AssertionError("`self.host_mass_correction_model` is invalid")
+
+        return mass_correction
 
     def sample_priors(self, size=1):
         """Returns the prior sampled as a matrix of shape = (size, ndims)"""
         return np.array([rv.rvs(size) for rv in self.param_rvs.values()]).T
-
-    def get_hubble_residual(self, burn=0):
-        sampler = self.get_sampler()
-        trace = az.from_emcee(sampler, var_names=list(self.param_rvs.keys())).sel(
-            slice=(burn, None)
-        )
-        params = trace.get("posterior").mean()
-        mu_theoretical = get_mu_th(self.H0, params["Om0"], self.X["redshift"])
-        m_obs = self.y
-        m_pred = self._get_abs_mag_and_err(
-            mu_theoretical,
-            params["M_B"],
-            params["alpha"],
-            self.X["stretch"],
-            params["beta"],
-            self.X["color"],
-            mass_correction,
-        )
-
-        return m_obs - m_pred
 
     #################
     # BAYESIAN MODEL
@@ -176,35 +225,15 @@ class Model:
         return lnp
 
     def loglike(self, params, y, X, H0):
-        from .distmod_cosmology import get_mu_th
-
-        try:
-            mu_theoretical = get_mu_th(H0, params["Om0"], X["redshift"])
-        except ValueError as e:
-            raise e
-
-        if self.host_mass_correction_model == "step":
-            mass_correction = mass_corrections.step(
-                X["host_mass"], params["loc"], params["size"]
-            )
-        elif self.host_mass_correction_model == "sigmoid":
-            mass_correction = mass_corrections.sigmoid(
-                X["host_mass"], params["loc"], params["size"], params["slope"]
-            )
-        else:
-            raise AssertionError("`self.host_mass_correction_model` is invalid")
-
         m_obs = self.y
         m_obs_sigma = X["mag_sigma"]
 
-        m_pred = self._get_abs_mag_and_err(
-            mu_theoretical,
-            params["M_B"],
-            params["alpha"],
+        m_pred = self.predict(
+            X["redshift"],
             X["stretch"],
-            params["beta"],
             X["color"],
-            mass_correction,
+            params,
+            host_mass=X["host_mass"],
         )
         m_pred_sigma = np.sqrt(
             (X["stretch_sigma"] * params["alpha"]) ** 2
@@ -222,11 +251,6 @@ class Model:
     ##################
     # PRIVATE METHODS
     ##################
-
-    def _get_abs_mag_and_err(
-        self, mu_th, M_B, alpha, stretch, beta, color, mass_correction=0
-    ):
-        return mu_th + M_B + alpha * stretch + beta * color + mass_correction
 
     def get_host_mass_rv(self, host_mass):
         # Return different types of pm.Model depending on the first element of `host_mass`.

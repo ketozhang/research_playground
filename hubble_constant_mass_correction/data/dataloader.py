@@ -25,7 +25,7 @@ COLUMNS = [
 
 def get_zpeg(zpeg_num):
     dirpath = DATA_PATH / "zpeg"
-    filename = f"JLA_SDSSphot_A_nodustcorr_ZPEG_{zpeg_num}_rev1.csv"
+    filename = f"zpeg_{zpeg_num}.csv"
     df = pd.read_csv(dirpath / filename)
 
     df = df.rename(
