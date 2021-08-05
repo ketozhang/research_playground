@@ -43,14 +43,14 @@ class Model:
 
         # Handle parameters
         self.param_rvs = {
-            "sigma_int": st.halfnorm(1),
-            "Om0": st.uniform(0, 1),
-            "alpha": st.norm(0, 10),
-            "beta": st.norm(0, 10),
-            "M_B": st.norm(0, 100),
+            "sigma_int": st.halfcauchy(scale=1),
+            "Om0": st.uniform(0.25, 0.1),
+            "alpha": st.norm(0, 1),
+            "beta": st.norm(3, 0.2),
+            "M_B": st.norm(-19, 10),
             # "host_mass": self.get_host_mass_rv(self.X["host_mass"]),
-            "loc": st.uniform(0, 1),
-            "size": st.norm(0, 1),
+            "loc": st.gamma(a=100, scale=0.1),  # mean=a*scale, var=a*scale**2
+            "size": st.norm(0, 0.1),
             "slope": st.norm(0, 1),
         }
         if param_rvs:
