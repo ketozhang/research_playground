@@ -1,2 +1,2 @@
 # Results
-All figures and results are summarized in this [Jupyter notebook](./notebook.ipynb).
+See (model_results.md)[./model_results.md]
