@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import prospect
 
 DATA_PATH = Path(__file__).resolve().parent
 
@@ -66,6 +67,53 @@ def get_jla():
             "d3rdvar": "host_mass_sigma",
         }
     ).pipe(_fill_missing_cols)
+
+    return df
+
+
+def get_prospector(**kwargs):
+    dirpath = DATA_PATH / "prospector"
+    filename = "prospector.csv"
+
+    if (dirpath / filename).exists():
+        return pd.read_csv(dirpath / filename)
+    else:
+        return _generate_data_from_prospector(dirpath / filename, **kwargs)
+
+
+def _generate_data_from_prospector(savefile=None, burn="auto"):
+    df = get_jla().drop(columns=["host_mass"])
+
+    # Get HDI regions for host mass
+    def get_host_mass_mean_sd(filename, burn=burn):
+        res, _, _ = prospect.io.read_results.results_from(filename)
+
+        mass_idx = res["theta_labels"].index("mass")
+        trace = np.log10(res["chain"][:, :, mass_idx])
+
+        if burn == "auto":
+            burn = trace.shape[1] // 2
+        trace_burn = trace[:, burn:]
+
+        return np.mean(trace_burn), np.std(trace_burn)
+
+    idx_without_results = []
+    for idx in df.index:
+        try:
+            glob = (DATA_PATH / "prospector" / "mass_chains").glob(
+                f"SDSSphot_A_{idx}*.h5"
+            )
+            filename = next(glob)
+        except StopIteration:
+            idx_without_results.append(idx)
+            continue
+
+        host_mass_mean, host_mass_sd = get_host_mass_mean_sd(str(filename))
+        df.loc[idx, "host_mass"] = host_mass_mean
+        df.loc[idx, "host_mass_sigma"] = host_mass_sd
+
+    if savefile:
+        df.to_csv(savefile, index=False)
 
     return df
 

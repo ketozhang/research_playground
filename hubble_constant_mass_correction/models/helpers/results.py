@@ -35,7 +35,7 @@ class Results:
             trace_mean = trace.get("posterior").mean()
             params = {k: trace_mean.get(k).values for k in trace_mean}
         elif estimator == "hdi":
-            trace_mean = az.hdi(trace.get("posterior")).mean()
+            trace_mean = az.hdi(trace.get("posterior"), hdi_prob=0.68).mean()
             params = {k: trace_mean.get(k).values for k in trace_mean}
         else:
             raise NotImplementedError()
@@ -54,7 +54,16 @@ class Results:
         )
         return mu_pred - mu_th
 
-    def plot_hr_vs_x(self, x, data, estimator="mean", burn="auto", ax=None, **kwargs):
+    def plot_hr_vs_x(
+        self,
+        x,
+        data,
+        estimator="mean",
+        burn="auto",
+        ax=None,
+        mass_step_label=None,
+        **kwargs
+    ):
         """
         x : np.array
             Values to plot on x-axis
@@ -86,22 +95,40 @@ class Results:
         ax.scatter(meanx, meany, color="r", s=50, marker="s", edgecolors="k")
 
         # Plot mass step
-        ax.axvline(params["loc"], c="k", lw=2)
+        ax.axvline(params["loc"], c="k", lw=2, label=mass_step_label)
 
         return ax
 
-    def plot_hr_vs_host_mass(self, data, fig=None, **kwargs):
-        if fig is None:
-            fig, (ax1, ax2) = plt.subplots(figsize=(8, 8), nrows=2, sharex=True)
-        else:
-            ax1 = fig.add_subplot(2, 1, 0)
-            ax2 = fig.add_subplot(2, 1, 1)
+    def plot_hr_vs_host_mass(self, data, **kwargs):
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(
+            nrows=2, ncols=2, figsize=(16, 8), sharex="col", sharey="row"
+        )
 
-        self.plot_hr_vs_x(data["host_mass"], data, ax=ax1)
+        self.plot_hr_vs_x(data["host_mass"], data, ax=ax1, mass_step_label="Mean")
         self.plot_hr_vs_x(data["host_mass"], data, host_mass=data["host_mass"], ax=ax2)
-        fig.subplots_adjust(hspace=0, wspace=0)
+        ax1.set_title("w/o mass correction")
+        ax2.set_title("w/ mass correction")
+        ax1.legend()
+
+        self.plot_hr_vs_x(
+            data["host_mass"],
+            data,
+            ax=ax3,
+            estimator="hdi",
+            mass_step_label="68% HDI Mean",
+        )
+        self.plot_hr_vs_x(
+            data["host_mass"],
+            data,
+            host_mass=data["host_mass"],
+            estimator="hdi",
+            ax=ax4,
+        )
+        ax3.legend()
+
+        fig.subplots_adjust(wspace=0, hspace=0)
         fig.supxlabel("$\log_{10}(M/M_\odot)$")
-        fig.supylabel("HR (")
+        fig.supylabel("HR (mag)")
 
         return fig
 

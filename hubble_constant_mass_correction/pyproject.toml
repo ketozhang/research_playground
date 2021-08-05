@@ -19,6 +19,8 @@ emcee = "^3.1.0"
 ipywidgets = "^7.6.3"
 h5py = "^3.3.0"
 tabulate = "^0.8.9"
+astro-prospector = "^1.0.0"
+astro-sedpy = "^0.2.0"
 
 [tool.poetry.dev-dependencies]
 black = "^21.6b0"

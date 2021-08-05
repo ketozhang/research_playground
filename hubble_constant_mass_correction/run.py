@@ -53,7 +53,10 @@ if __name__ == "__main__":
     # run(data, f"results/jla/results_{timestamp}.hd5")
 
     # ZPEG
-    for i in range(1, 12 + 1):
-        data = dataloader.get_zpeg(i)
-        run(data, f"results/zpeg/{i}/results_{timestamp}.hd5")
-        # f"results/jla/results_{dt.utcnow().strftime('%Y-%m-%dT%H%M')}.hd5"
+    # for i in range(1, 12 + 1):
+    #     data = dataloader.get_zpeg(i)
+    #     run(data, f"results/zpeg/{i}/results_{timestamp}.hd5")
+
+    # Prospector
+    data = dataloader.get_prospector()
+    run(data, f"results/prospector/results_{timestamp}.hd5")

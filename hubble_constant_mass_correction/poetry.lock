@@ -70,6 +70,31 @@ xarray = ">=0.16.1"
 all = ["numba", "bokeh (>=1.4.0)", "ujson", "dask", "zarr (>=2.5.0)"]
 
 [[package]]
+name = "astro-prospector"
+version = "1.0.0"
+description = "Stellar Population Inference"
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.dependencies]
+h5py = "*"
+numpy = "*"
+
+[[package]]
+name = "astro-sedpy"
+version = "0.2.0"
+description = "Simple tools for astronomical spectral energy distributions, particularly filter projections."
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.dependencies]
+astropy = "*"
+numpy = "*"
+scipy = "*"
+
+[[package]]
 name = "astropy"
 version = "4.2.1"
 description = "Astronomy and astrophysics core library"
@@ -1390,7 +1415,7 @@ viz = ["matplotlib", "seaborn", "nc-time-axis"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "bec4d0a5e4d0247ba83e303ab78fcfaf09f059cd7c6bd3fb94d7c5dcc7585367"
+content-hash = "3ad9eca13aee4a84ddd9b48710ba166b7ff48d3f5f4eed492a4034543be6005e"
 
 [metadata.files]
 anyio = [
@@ -1428,6 +1453,14 @@ argon2-cffi = [
 arviz = [
     {file = "arviz-0.11.2-py3-none-any.whl", hash = "sha256:f6a1389a90b53335f248d282c8142b8209150b9625459a85ec6d3d38786797c1"},
     {file = "arviz-0.11.2.tar.gz", hash = "sha256:a9d0eb32e84a0472aa78a488ba9b12b05e7be8c2c8fb34a1ba6286cc1254ee0d"},
+]
+astro-prospector = [
+    {file = "astro-prospector-1.0.0.tar.gz", hash = "sha256:3236c0758860b232d47963315e7397a2be64f5f0c312e679cbc536f64acbe333"},
+    {file = "astro_prospector-1.0.0-py3-none-any.whl", hash = "sha256:b7540282fc2289b81792a4200bde992d51e84d2db6301e4ba26f61633eaa042f"},
+]
+astro-sedpy = [
+    {file = "astro-sedpy-0.2.0.tar.gz", hash = "sha256:7b06c69d0aee252265677c81187df5081db0140d6bf1a6d84f377f11064c1fef"},
+    {file = "astro_sedpy-0.2.0-py3-none-any.whl", hash = "sha256:9eab53e74ea74f234fbbabfea01c7c2c16b95312e4d49d64f80a78ab6e6e1b6b"},
 ]
 astropy = [
     {file = "astropy-4.2.1-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:db694c10eb3cc10068859ba1eab30b38b7e821dbfff142960c5a99c4af059747"},
