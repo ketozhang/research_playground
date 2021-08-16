@@ -7,14 +7,14 @@ from pathlib import Path
 from scipy import stats as st
 
 from data import dataloader
-from models.model import Model
+from models.model import Chi2Model, Model
 
 DEFAULT_NPROCS = 2 * mp.cpu_count() + 1
 
 
-def run(data, savefile):
+def run(data, savefile, model_cls=Model):
     Path(savefile).parent.mkdir(exist_ok=True, parents=True)
-    model = Model(
+    model = model_cls(
         H0=70,
         host_mass_correction_model="step",
         # param_rvs={
@@ -49,14 +49,14 @@ if __name__ == "__main__":
     timestamp = dt.utcnow().strftime("%Y-%m-%dT%H%M")
 
     # JLA
-    # data = dataloader.get_jla()
-    # run(data, f"results/jla/results_{timestamp}.hd5")
+    data = dataloader.get_jla()
+    run(data, f"results/jla-chi2/results_{timestamp}.hd5", model_cls=Chi2Model)
 
     # ZPEG
     # for i in range(1, 12 + 1):
     #     data = dataloader.get_zpeg(i)
     #     run(data, f"results/zpeg/{i}/results_{timestamp}.hd5")
 
-    # Prospector
-    data = dataloader.get_prospector()
-    run(data, f"results/prospector/results_{timestamp}.hd5")
+    # # Prospector
+    # data = dataloader.get_prospector()
+    # run(data, f"results/prospector/results_{timestamp}.hd5")

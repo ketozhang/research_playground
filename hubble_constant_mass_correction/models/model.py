@@ -46,7 +46,7 @@ class Model:
             "sigma_int": st.halfcauchy(scale=1),
             "Om0": st.uniform(0.25, 0.1),
             "alpha": st.norm(0, 1),
-            "beta": st.norm(3, 0.2),
+            "beta": st.norm(3, 0.6),
             "M_B": st.norm(-19, 10),
             # "host_mass": self.get_host_mass_rv(self.X["host_mass"]),
             "loc": st.gamma(a=100, scale=0.1),  # mean=a*scale, var=a*scale**2
@@ -241,12 +241,14 @@ class Model:
             + params["sigma_int"] ** 2
         )
 
-        lnl = (
-            st.norm(m_pred, np.sqrt(m_obs_sigma ** 2 + m_pred_sigma ** 2))
-            .logpdf(m_obs)
-            .sum()
-        )
+        lnl = self._loglike(
+            m_obs, m_pred, np.sqrt(m_obs_sigma ** 2 + m_pred_sigma ** 2)
+        ).sum()
         return lnl if np.isfinite(lnl) else -np.inf
+
+    def _loglike(self, y, ypred, ypred_sigma):
+        """Calculates the single sample likelihood P(Y | Ypred)."""
+        return st.norm(ypred, ypred_sigma).logpdf(y)
 
     ##################
     # PRIVATE METHODS
@@ -274,3 +276,11 @@ class Model:
         x = np.concatenate([[x[0] - 3 * width], x, [x[-1] + 3 * width]])
         y = np.concatenate([[0], y, [0]])
         return Interpolated(name, x, y)
+
+
+class Chi2Model(Model):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _loglike(self, y, ypred, ypred_sigma):
+        return np.log(((y - ypred) / ypred_sigma) ** 2)
