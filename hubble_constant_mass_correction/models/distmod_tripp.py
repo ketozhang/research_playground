@@ -1,2 +1,2 @@
-def get_mu_tripp(m_b, x1, color, alpha, beta, M_B):
-    return m_b - (M_B - alpha * x1 + beta * color)
+def get_mu_tripp(mag, stretch, color, alpha, beta, M_B):
+    return mag - (M_B - alpha * stretch + beta * color)

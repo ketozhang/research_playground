@@ -34,8 +34,14 @@ def get_zpeg(zpeg_num):
             "zcmb": "redshift",
             "mb": "mag",
             "x1": "stretch",
+            "dx1": "stretch_sigma",
             "color": "color",
+            "dcolor": "color_sigma",
             "ZPEG_StMass": "host_mass",
+            "d3rdvar": "host_mass_sigma",
+            "cov_m_s": "cov_mag_stretch",
+            "cov_m_c": "cov_mag_color",
+            "cov_s_c": "cov_stretch_color",
         }
     ).pipe(_fill_missing_cols)
 
@@ -65,6 +71,9 @@ def get_jla():
             "dcolor": "color_sigma",
             "3rdvar": "host_mass",
             "d3rdvar": "host_mass_sigma",
+            "cov_m_s": "cov_mag_stretch",
+            "cov_m_c": "cov_mag_color",
+            "cov_s_c": "cov_stretch_color",
         }
     ).pipe(_fill_missing_cols)
 

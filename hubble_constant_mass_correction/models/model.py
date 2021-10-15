@@ -50,7 +50,7 @@ class Model:
             "M_B": st.norm(-19, 10),
             # "host_mass": self.get_host_mass_rv(self.X["host_mass"]),
             "loc": st.gamma(a=100, scale=0.1),  # mean=a*scale, var=a*scale**2
-            "size": st.norm(0, 0.1),
+            "size": st.halfcauchy(scale=0.1),
             "slope": st.norm(0, 1),
         }
         if param_rvs:
@@ -113,11 +113,10 @@ class Model:
         """
         # Handles design matrix, store x, y, and nrows instance attributes
         if isinstance(data, pd.DataFrame):
-            self.y = data["mag"]
-            self.X = data.drop(columns=["mag"])
+            self.data = data
         else:
             raise ValueError("Arg `data` must be `pd.DataFrame`.")
-        self.nrows = self.X.shape[0]
+        self.nrows = self.data.shape[0]
 
         # Start MCMC fitter
         if nwalkers is not None:
@@ -134,7 +133,6 @@ class Model:
             nwalkers=self._nwalkers,
             ndim=self.nparams,
             log_prob_fn=self.logprob,
-            args=(self.y, self.X, self.H0),
             parameter_names=list(self.param_rvs.keys()),
             backend=storage_backend,
             **sampler_kwargs
@@ -169,32 +167,43 @@ class Model:
         )
         return m_pred
 
-    def predict_mu(self, m_obs, stretch, color, params, host_mass=None):
-        mass_correction = (
-            0 if host_mass is None else self.get_mass_correction(host_mass, params)
+    def predict_mu(self, mag, stretch, color, params, host_mass=None):
+        mass_correction, _ = (
+            (0, 0)
+            if host_mass is None
+            else self.get_mass_correction(host_mass, 0, params)
         )
-
-        mu_pred = m_obs - (
-            params["M_B"]
-            + params["alpha"] * stretch
-            + params["beta"] * color
+        return (
+            get_mu_tripp(
+                mag, stretch, color, params["alpha"], params["beta"], params["M_B"]
+            )
             + mass_correction
         )
-        return mu_pred
 
-    def get_mass_correction(self, host_mass, params):
+    def get_mass_correction(self, host_mass, host_mass_sigma, params):
         if self.host_mass_correction_model == "step":
             mass_correction = mass_corrections.step(
                 host_mass, params["loc"], params["size"]
+            )
+            mass_correction_sigma = mass_corrections.step_sigma(
+                host_mass, host_mass_sigma, params["loc"], params["size"]
             )
         elif self.host_mass_correction_model == "sigmoid":
             mass_correction = mass_corrections.sigmoid(
                 host_mass, params["loc"], params["size"], params["slope"]
             )
+
+            mass_correction_sigma = mass_corrections.sigmoid_sigma(
+                host_mass,
+                host_mass_sigma,
+                params["loc"],
+                params["size"],
+                params["slope"],
+            )
         else:
             raise AssertionError("`self.host_mass_correction_model` is invalid")
 
-        return mass_correction
+        return mass_correction, mass_correction_sigma
 
     def sample_priors(self, size=1):
         """Returns the prior sampled as a matrix of shape = (size, ndims)"""
@@ -203,13 +212,13 @@ class Model:
     #################
     # BAYESIAN MODEL
     #################
-    def logprob(self, params, y, X, H0):
+    def logprob(self, params):
         lnp = self.logprior(params)
 
         if not np.isfinite(lnp):
             return -np.inf
 
-        lnl = self.loglike(params, y, X, H0)
+        lnl = self.loglike(params)
         return lnp + lnl
 
     def logprior(self, params):
@@ -224,31 +233,40 @@ class Model:
 
         return lnp
 
-    def loglike(self, params, y, X, H0):
-        m_obs = self.y
-        m_obs_sigma = X["mag_sigma"]
-
-        m_pred = self.predict(
-            X["redshift"],
-            X["stretch"],
-            X["color"],
-            params,
-            host_mass=X["host_mass"],
+    def loglike(self, params):
+        mass_correction, mass_correction_sigma = self.get_mass_correction(
+            self.data["host_mass"], self.data["host_mass_sigma"], params
         )
-        m_pred_sigma = np.sqrt(
-            (X["stretch_sigma"] * params["alpha"]) ** 2
-            + (X["color_sigma"] * params["beta"]) ** 2
+
+        mu_obs = (
+            self.predict_mu(
+                **(self.data[["mag", "stretch", "color"]].to_dict("series")),
+                params=params
+            )
+            + mass_correction
+        )
+
+        mu_sigma = np.sqrt(
+            # Variance terms
+            self.data["mag_sigma"] ** 2
+            + (self.data["stretch_sigma"] * params["alpha"]) ** 2
+            + (self.data["color_sigma"] * params["beta"]) ** 2
+            + mass_correction_sigma ** 2
             + params["sigma_int"] ** 2
+            # Covariance terms
+            + 2 * params["alpha"] * self.data["cov_mag_stretch"]
+            + 2 * params["beta"] * self.data["cov_mag_color"]
+            + 2 * params["alpha"] * params["beta"] * self.data["cov_stretch_color"]
         )
 
-        lnl = self._loglike(
-            m_obs, m_pred, np.sqrt(m_obs_sigma ** 2 + m_pred_sigma ** 2)
-        ).sum()
+        mu_th = get_mu_th(self.H0, params["Om0"], self.data["redshift"])
+
+        lnl = self._loglike(mu_obs, mu_th, mu_sigma).sum()
         return lnl if np.isfinite(lnl) else -np.inf
 
-    def _loglike(self, y, ypred, ypred_sigma):
-        """Calculates the single sample likelihood P(Y | Ypred)."""
-        return st.norm(ypred, ypred_sigma).logpdf(y)
+    def _loglike(self, mu_obs, mu_th, mu_sigma):
+        """Calculates the single sample log likelihood as the log PDF of the normal distribution."""
+        return st.norm(mu_th, mu_sigma).logpdf(mu_obs)
 
     ##################
     # PRIVATE METHODS
@@ -282,5 +300,7 @@ class Chi2Model(Model):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def _loglike(self, y, ypred, ypred_sigma):
-        return np.log(((y - ypred) / ypred_sigma) ** 2)
+    def _loglike(self, mu_obs, mu_th, mu_sigma):
+        """Calculates the single sample log likelihoood as the log PDF of the normal distribution without the
+        normalization factor. This effectively removes the so-called regularization effect of the optimizer."""
+        return np.log(((mu_obs - mu_th) / mu_sigma) ** 2)
